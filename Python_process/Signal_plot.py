@@ -6,8 +6,8 @@ df = pd.read_csv(r"..\data\test1.csv", header=None)
 df.columns = ["ECG", "RED", "IR", "PCG"]  # Đặt tên cột tương ứng
 
 # Định nghĩa khoảng cần vẽ (bạn có thể điều chỉnh)
-start = 0
-end = len(df)
+start = 100
+end = 1100
 
 # Tạo trục x
 x = range(start, end)
