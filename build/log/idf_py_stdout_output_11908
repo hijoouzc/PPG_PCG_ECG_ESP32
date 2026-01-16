@@ -1,0 +1,202 @@
+Command: C:\Espressif\tools\python\v5.5.1\venv\Scripts\python.exe C:\esp\v5.5.1\esp-idf\tools/idf_monitor.py -p COM5 -b 115200 --toolchain-prefix xtensa-esp32-elf- --target esp32 --revision 0 C:\Users\ADMIN\workspace\PPG_PCG_ECG\build\app-template.elf C:\Users\ADMIN\workspace\PPG_PCG_ECG\build\bootloader\bootloader.elf --force-color -m 'C:\Espressif\tools\python\v5.5.1\venv\Scripts\python.exe' 'C:\esp\v5.5.1\esp-idf\tools\idf.py' '-p' 'COM5' '-b' '115200'
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+invalid header: 0xffffffff
+ets Jul 29 2019 12:21:46
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
