@@ -1,7 +1,7 @@
 /**
  * @file sensor_init.h 
- * @brief Ham khoi tao & thuc thi dong bo cam bien PPG - PCG - ECG
- * @author Luong Huu Phuc
+ * @brief Cau hinh va dong bo cam bien PPG - PCG - ECG @ 1000Hz
+ * @author Luong Huu Phuc (Modified)
  */
 
 #ifndef SENSOR_INIT_H
@@ -12,8 +12,10 @@
 #include <stdio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include "esp_log.h"
 #include "esp_err.h"
+#include "sensor_init.h"
 
 /****Thu vien cho I2S****/
 #include "driver/i2s_std.h"
@@ -30,86 +32,51 @@
 #include "driver/gpio.h"
 #include "max30102.h"
 
-//Cau hinh chan cho INMP441 
-#define I2S_PORT      I2S_NUM_0
-#define DIN_PIN       33
-#define BCLK_PIN      32
-#define LRCL_PIN      25
-#define SAMPLE_RATE   1000
-#define dmaDesc       6 //6 bo dac ta dma
-#define dmaLength     64//So bytes moi buffer, cang lon thi buffer_durations cang lau
-#define DMA_BUFFER_SIZE  (dmaDesc * dmaLength) //6 * 128 = 768 bytes, buffer_duration = 6ms
+/** Thu vien cho ADC  */
+#include "driver/adc.h"
+#include "driver/ledc.h"
 
-//Cau hinh chan cho MAX30102
-#define I2C_SDA_GPIO  21
-#define I2C_SCL_GPIO  22
-#define I2C_PORT      I2C_NUM_0
-#define powerLed      UINT8_C(0x1F) //Cuong do led, tieu thu 6.4mA
-#define sampleAverage 4
-#define ledMode       2
-#define sampleRate    1000 //Tan so lay mau cao thi kich thuoc BUFFER_SIZE cung phai thay doi de co thoi gian thuat toan xu ly cac mau
-#define pulseWidth    411 //Xung cang rong, dai thu duoc cang nhieu (18 bit)
-#define adcRange      16384 //14 bit ADC tieu thu 65.2pA moi LSB
+// --- CAU HINH HE THONG ---
+#define SAMPLE_RATE_HZ      1000  // Muc tieu 1000Hz
+#define PRINT_TASK_PRIORITY 5     // Uu tien cao nhat cho task in/xu ly
 
-//Cau hinh chan cho AD8232
-#define ADC_CHANNEL      ADC_CHANNEL_6 //GPIO34
-#define ADC_UNIT         ADC_UNIT_1
-#define ADC_ATTEN        ADC_ATTEN_DB_12 //Tang pham vi do 
-#define ADC_WIDTH        ADC_WIDTH_BIT_12
-#define ADC_SAMPLE_RATE  1000
-#define BUZZER_PIN       17
+// --- I2S (PCG - INMP441) ---
+#define I2S_PORT            I2S_NUM_0
+#define DIN_PIN             33
+#define BCLK_PIN            32
+#define LRCL_PIN            25
+#define I2S_SAMPLE_RATE     16000 
+// Ty le downsample: 16000 / 1000 = 16. Nghia la cu 16 mau thi lay trung binh ra 1 mau
+#define I2S_DOWNSAMPLE_RATIO 16 
+#define DMA_DESC_NUM        6
+#define DMA_FRAME_NUM       64    // Giam size de giam latency
+// Buffer size cho Queue (chua duoc khoang 2 lan khung truyen de an toan)
+#define I2S_QUEUE_LEN       256   
 
-//Buzzer configure
-#define PWM_FREQ          1000
-#define PWM_RES           LEDC_TIMER_13_BIT
-#define PWM_CHANNEL       LEDC_CHANNEL_0
-#define PWM_TIMER         LEDC_TIMER_0
-#define R_PEAK_THREASHOLD 3000 //Nguong toi thieu de phat hien dinh
-#define NO_SIGNAL         0
+// --- I2C (PPG - MAX30102) ---
+#define I2C_SDA_GPIO        21
+#define I2C_SCL_GPIO        22
+#define I2C_PORT            I2C_NUM_0
+#define I2C_SPEED_HZ        400000 // Tang toc do I2C len 400kHz (Fast Mode) de kip doc trong 1ms
+#define PPG_SAMPLE_RATE     1000
 
-/**
- * @note Ham cau hinh i2s cho PCG
- */
-void inmp441_configure(void);
+// --- ADC (ECG - AD8232) ---
+// Luu y: ESP32 ADC1 Channel 6 la GPIO34
+#define ADC_ECG_CHANNEL     ADC1_CHANNEL_6 
+// Cap nhat DB_12 cho ESP-IDF v5.x
+#define ADC_ATTEN_LEVEL     ADC_ATTEN_DB_12 
 
-/**
- * @note Ham cau hinh ADC cho ECG
- */
-void ad8232_configure(void);
+// --- GLOBAL HANDLES ---
+extern QueueHandle_t i2s_data_queue; // Hang doi du lieu am thanh
+extern SemaphoreHandle_t data_mutex; // Mutex bao ve bien toan cuc
 
-/**
- * @note Ham cau hinh I2C cho PPG 
- */
-void max30102_configure(void);
+// --- FUNCTION PROTOTYPES ---
+// Ham khoi tao toan bo
+void sensor_init_all(void);
 
-/**
- * @note Hma thuc thi doc du lieu PPG
- */
-void readMAX30102_task(void *pvParameter);
+// Cac Task Handle (Quan trong: Ten phai khop voi sensor_init.c)
+void i2s_reader_task(void *pvParameter); 
+void max30102_reader_task(void *pvParameter);
+void processing_task(void *pvParameter);
 
-/**
- * @brief Ham thuc thi doc du lieu PCG
- */
-void readINMP441_task(void *pvParameter);
-
-/**
- * @brief Ham thuc thi doc du lieu ECG
- */
-void readAD8232_task(void *pvParameter);
-
-/**
- * @brief Ham khoi tao mutex cho semaphore
- */
-void mutex_init(void);
-
-/**
- * @brief Ham in dong bo ket qua 3 cam bien ra man hinh 
- */
-void printData_task(void *pvParameter);
-
-/**
- * @brief Ham su dung Timer de dong bo cam bien
- */
-void sensor_timer_callback(void);
-
-#endif //SENSOR_INIT_H
+#endif // SENSOR_INIT_H

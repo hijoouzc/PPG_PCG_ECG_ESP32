@@ -5,9 +5,11 @@ import sys
 
 # ===== CẤU HÌNH (BẠN CHỈNH SỬA Ở ĐÂY) =====
 PORT = 'COM5'          # Thay bằng cổng COM của bạn
-BAUD = 115200          # Tốc độ baud của ESP32
-FILENAME = "test1.csv" # Tên file lưu dữ liệu
+BAUD = 921600          # Tốc độ baud của ESP32
+FILENAME = "test5.csv" # Tên file lưu dữ liệu
 
+SAMPLE_RATE = 1000      # Tần số lấy mẫu mong muốn (Hz) - Ví dụ 500Hz
+EXPECTED_DT = 1000 / SAMPLE_RATE  # Khoảng thời gian mong muốn giữa 2 mẫu (ms)
 # ===========================================
 
 def run_logger():
@@ -22,14 +24,21 @@ def run_logger():
         sys.exit()
 
     print(f"📝 Đang lưu dữ liệu vào {FILENAME}...")
+    print(f"ℹ️  Sample Rate mong muốn: {SAMPLE_RATE} Hz (dt={EXPECTED_DT}ms)")
     print("⚠️  Nhấn Ctrl + C để dừng chương trình.")
 
     # 2. Mở file CSV để ghi
-    # test10.csv không có header, nên ta cũng không ghi header để giống định dạng
     with open(FILENAME, mode='w', newline='') as f:
         writer = csv.writer(f)
         
-        cnt = 0
+        # Viết header nếu cần (tùy chọn, hiện tại đang để trống theo code gốc)
+        # writer.writerow(["Index", "Timestamp", "ECG", "RED", "IR", "PCG"])
+        
+        # Khởi tạo các biến đếm cho việc check sample rate
+        sample_index = 0
+        lost_samples = 0
+        last_ts = None
+        
         try:
             while True:
                 # Đọc dữ liệu từ ESP32
@@ -42,31 +51,58 @@ def run_logger():
                     if len(parts) == 4:
                         try:
                             # 3. Lấy dữ liệu thô từ chuỗi
-                            # Thứ tự từ ESP32 (sensor_init.c):
-                            pcg_val = int(parts[0]) # global_inmp441_data
-                            red_val = int(parts[1]) # global_red
-                            ir_val  = int(parts[2]) # global_ir
-                            ecg_val = int(parts[3]) # global_adc_value
+                            pcg_val = int(parts[0]) 
+                            red_val = int(parts[1]) 
+                            ir_val  = int(parts[2]) 
+                            ecg_val = int(parts[3]) 
                             
-                            # 4. Sắp xếp lại cho giống test10.csv (ECG, RED, IR, PCG)
-                            # Cột 1: ECG
-                            # Cột 2: RED
-                            # Cột 3: IR
-                            # Cột 4: PCG
-                            row_to_save = [ecg_val, red_val, ir_val, pcg_val]
+                            # Tạo timestamp hiện tại (ms)
+                            ts = int(time.time() * 1000)
+
+                            # ---- SAMPLERATE CHECK (Code của bạn) ----
+                            if last_ts is not None:
+                                dt = ts - last_ts
+                                # Lưu ý: Vì Python chạy trên OS không thời gian thực, 
+                                # dt có thể dao động nhẹ dù ESP gửi đúng.
+                                # Bạn có thể thêm sai số (tolerance) nếu cần.
+                                if dt != EXPECTED_DT:
+                                    missed = max(0, dt - EXPECTED_DT)
+                                    # Logic đếm số mẫu mất (ước lượng theo thời gian trôi qua)
+                                    # Nếu bạn muốn đếm số mẫu bị mất thực sự: num_missed = round(missed / EXPECTED_DT)
+                                    lost_samples += missed 
+                                    # Chỉ in cảnh báo nếu độ lệch lớn (ví dụ > 5ms) để tránh spam console
+                                    if missed > 5: 
+                                        print(f"[WARN] Δt={dt} ms, lost_time={missed}ms")
+
+                            last_ts = ts
+                            # -----------------------------------------
+
+                            # 4. Ghi vào file (Cập nhật format bao gồm Index và Time)
+                            # Format: [Index, Time, ECG, RED, IR, PCG]
+                            # Lưu ý: Code mẫu của bạn dùng 'ppg', ở đây tôi giữ cả 'red' và 'ir'
+                            row_to_save = [
+                                sample_index,
+                                ts,
+                                ecg_val,
+                                red_val,
+                                ir_val,
+                                pcg_val
+                            ]
                             
-                            # Ghi vào file
                             writer.writerow(row_to_save)
                             
-                            cnt += 1
-                            if cnt % 100 == 0:
-                                print(f"Đã lưu {cnt} dòng. Mẫu mới nhất: {row_to_save}")
+                            sample_index += 1
+                            
+                            # Log tiến độ mỗi 100 mẫu
+                            if sample_index % 100 == 0:
+                                print(f"Sample {sample_index} | Lost (ms): {lost_samples} | Data: {row_to_save}")
                                 
                         except ValueError:
                             continue # Bỏ qua dòng lỗi (không phải số)
 
         except KeyboardInterrupt:
-            print(f"\n🛑 Đã dừng! Tổng cộng lưu được {cnt} dòng dữ liệu.")
+            print(f"\n🛑 Đã dừng! Tổng cộng lưu được {sample_index} dòng dữ liệu.")
+            print(f"Tổng thời gian bị trễ (Lost ms): {lost_samples}")
         finally:
             ser.close()
 

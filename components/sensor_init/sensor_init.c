@@ -1,192 +1,165 @@
-/**
- * @brief Thu vien de dinh nghia cac ham thuc thi & khoi tao cua PPG - PCG - ECG
- * @author Luong Huu Phuc
- */
-#include <stdio.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/semphr.h>
-#include "esp_log.h"
-#include "esp_err.h"
 #include "sensor_init.h"
-
-/****Thu vien cho I2S****/
-#include "driver/i2s_std.h"
-#include "driver/i2c_master.h"
-#include "driver/i2s_types.h"
-#include "driver/i2s_common.h"
-#include "driver/i2s_types_legacy.h"
-
-/** Thu vien cho I2C */
-#include <string.h>
-#include <esp_timer.h>
+#include "esp_log.h"
 #include "driver/i2c.h"
-#include "driver/i2c_types.h"
-#include "driver/gpio.h"
-#include "max30102.h"
 
-/** Thu vien cho ADC  */
-#include "driver/adc.h"
-#include "driver/ledc.h"
+// --- BIEN TOAN CUC ---
+volatile uint32_t global_ppg_red = 0;
+volatile uint32_t global_ppg_ir = 0;
 
-/** Global variables for INMP441 & MAX30102 & AD8232 */
-volatile unsigned long global_red = 0;
-volatile unsigned long global_ir = 0;
-volatile int global_adc_value = 0;
-volatile int16_t global_inmp441_data = 0;
-
-/** Global mutex variables */
-SemaphoreHandle_t print_mutex = NULL; 
-
-/**** INMP441 ****/
-i2s_chan_handle_t rx_channel = NULL; //Tao kenh RX
-int32_t buffer32[DMA_BUFFER_SIZE / sizeof(int32_t)] = {0}; //Luu 768 / 4 = 192 mau trong 6ms
-int16_t buffer16[DMA_BUFFER_SIZE / sizeof(int32_t) * 3 / 2]=  {0}; //192 mau 
-
-/**** MAX30102 ****/
-i2c_dev_t dev;  
+// --- HANDLES ---
+i2s_chan_handle_t rx_channel = NULL;
+i2c_dev_t dev;
 struct max30102_record record;
-// unsigned long red, ir;
+QueueHandle_t i2s_data_queue = NULL;
+SemaphoreHandle_t data_mutex = NULL;
 
-static const char *TAG1 = "INMP441";
-static const char *TAG2 = "MAX30102";
-static const char *TAG3 = "AD8232";
+static const char *TAG = "SENSOR_FUSION";
 
-/** INMP441 configure */
-void inmp441_configure(void){
-  i2s_chan_config_t i2s_conf = {
-    .dma_desc_num = dmaDesc, 
-    .dma_frame_num = dmaLength,//128 bytes
-    .id = I2S_PORT,
-    .role = I2S_ROLE_MASTER,
-    .auto_clear = true,
-  };
+// --- KHOI TAO ---
+void sensor_init_all(void){
+    // 1. Khoi tao Queue & Mutex
+    i2s_data_queue = xQueueCreate(I2S_QUEUE_LEN, sizeof(int16_t));
+    data_mutex = xSemaphoreCreateMutex();
 
-  //Khoi tao RX va kiem tra loi
-  ESP_ERROR_CHECK(i2s_new_channel(&i2s_conf, NULL, &rx_channel));
+    // 3. Khoi tao MAX30102
+    memset(&dev, 0, sizeof(i2c_dev_t));
+    dev.port = I2C_PORT; 
+    
+    // --- [QUAN TRONG] Lay dia chi tu file header max30102.h ---
+    dev.addr = MAX30102_SENSOR_ADDR; 
+    // ----------------------------------------------------------
+    
+    dev.cfg.sda_io_num = I2C_SDA_GPIO;
+    dev.cfg.scl_io_num = I2C_SCL_GPIO;
+    dev.cfg.master.clk_speed = I2C_SPEED_HZ;
+    
+    // Init config MAX30102
+    ESP_ERROR_CHECK(i2c_dev_create_mutex(&dev));
+    // Cac tham so (0x1F, 4, 2...) khop voi cac type (uint8_t, int) trong prototype ham init
+    ESP_ERROR_CHECK(max30102_init(0x1F, 4, 2, 1000, 411, 16384, &record, &dev));
 
-  //Cau hinh i2s che do chuan 
-  i2s_std_config_t std_conf = {
-    .clk_cfg = {
-      .sample_rate_hz = SAMPLE_RATE,
-      .clk_src = I2S_CLK_SRC_DEFAULT,
-      .mclk_multiple = I2S_MCLK_MULTIPLE_1152//Cang cao thi jitter(nhieu) cua BLCK va LRCL cang it  
-    },
+    // 4. Khoi tao ADC (Legacy)
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    // Sua DB_11 thanh DB_12 cho ESP-IDF v5.x
+    adc1_config_channel_atten(ADC_ECG_CHANNEL, ADC_ATTEN_DB_12);
 
-    //Cau hinh du lieu trong 1 frame
-    .slot_cfg = {
-      .data_bit_width = I2S_DATA_BIT_WIDTH_32BIT, //So bit dau vao la 32-bit
-      .slot_mask = I2S_STD_SLOT_LEFT, //Kenh trai
-      .slot_mode = I2S_SLOT_MODE_MONO, //1 Kenh
-      .slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT, //So bit moi kenh
-    },
+    // 5. Khoi tao I2S STD
+    i2s_chan_config_t i2s_conf = I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT, I2S_ROLE_MASTER);
+    i2s_conf.dma_desc_num = DMA_DESC_NUM;
+    i2s_conf.dma_frame_num = DMA_FRAME_NUM;
+    i2s_conf.auto_clear = true;
+    ESP_ERROR_CHECK(i2s_new_channel(&i2s_conf, NULL, &rx_channel));
 
-    //Cau hinh GPIO
-    .gpio_cfg = {
-      .bclk = BCLK_PIN,
-      .din = DIN_PIN,
-      .ws = LRCL_PIN,
-      .dout = I2S_PIN_NO_CHANGE,
-    },
-  };
+    i2s_std_config_t std_conf = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = BCLK_PIN,
+            .ws = LRCL_PIN,
+            .dout = I2S_GPIO_UNUSED,
+            .din = DIN_PIN,
+        },
+    };
+    std_conf.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_channel, &std_conf));
+    ESP_ERROR_CHECK(i2s_channel_enable(rx_channel));
 
-  //Khoi tao che do chuan 
-  ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_channel, &std_conf));
-  //Bat kenh RX
-  ESP_ERROR_CHECK(i2s_channel_enable(rx_channel));
-  ESP_LOGI(TAG1, "INMP441 da duoc cau hinh thanh cong !!!");
+    ESP_LOGI(TAG, "All Sensors Initialized");
 }
 
-/** AD8232 configure */
-void ad8232_configure(void){
-  adc1_config_width(ADC_WIDTH);
-  adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN); //Suy hao
-  ESP_LOGI(TAG3, "ADC Configured: Channel: %d, Attenuation: %d", ADC_CHANNEL, ADC_ATTEN);
-}
+// --- TASK DOC I2S ---
+void i2s_reader_task(void *pvParameter){
+    int32_t raw_buffer[DMA_FRAME_NUM];
+    size_t bytes_read = 0;
+    
+    // Bien dung de tinh trung binh
+    int32_t sum_sample = 0;
+    int sample_count = 0;
+    int16_t final_sample = 0;
 
-/** MAX30102 configure */
-void max30102_configure(void){
-  memset(&dev, 0, sizeof(i2c_dev_t));
-  ESP_ERROR_CHECK(max30102_initDesc(&dev, 0, I2C_SDA_GPIO, I2C_SCL_GPIO));
-  if(max30102_readPartID(&dev) == ESP_OK) {
-    ESP_LOGI(TAG2, "Found MAX30102!");
-  }
-  else {
-    ESP_LOGE(TAG2, "Not found MAX30102");
-  }
-  ESP_ERROR_CHECK(max30102_init(powerLed, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange, &record, &dev));
-  max30102_clearFIFO(&dev);
-}
+    while(1){
+        // Doc khoi du lieu (Block cho den khi co data)
+        if(i2s_channel_read(rx_channel, raw_buffer, sizeof(raw_buffer), &bytes_read, 1000 / portTICK_PERIOD_MS) == ESP_OK){
+            int samples = bytes_read / sizeof(int32_t);
+            
+            for(int i=0; i<samples; i++){
+                // 1. Lay gia tri 16-bit tu du lieu tho 32-bit
+                int16_t current_sample = (int16_t)(raw_buffer[i] >> 14);
+                
+                // 2. Cong don
+                sum_sample += current_sample;
+                sample_count++;
 
-/** muxtex init */
-void mutex_init(void){
-  //Khoi tao Semaphore
-  print_mutex = xSemaphoreCreateMutex();  
-  if(print_mutex == NULL){
-    ESP_LOGE("MAIN", "Khong the khoi tao Mutex");
-    return;
-  }
-}
+                // 3. Khi du 16 mau (tuong duong 1ms troi qua o toc do 16kHz)
+                if(sample_count >= I2S_DOWNSAMPLE_RATIO){
+                    // Tinh trung binh
+                    final_sample = (int16_t)(sum_sample / I2S_DOWNSAMPLE_RATIO);
+                    
+                    // Day vao Queue (Luc nay Queue nhan duoc dung 1000Hz)
+                    xQueueSend(i2s_data_queue, &final_sample, 0);
 
-/** MAX30102 task */
-void readMAX30102_task(void *pvParameter){
-  ESP_LOGI(TAG2, "Bat dau doc cam bien AD8232");
-
-  while(1){
-    vTaskDelay(1);
-    max30102_check(&record, &dev); //Check the sensor, read up to 3 samples
-    while (max30102_available(&record)){
-      global_red = max30102_getFIFORed(&record);
-      global_ir = max30102_getFIFOIR(&record);
-      max30102_nextSample(&record);
+                    // Reset bien dem
+                    sum_sample = 0;
+                    sample_count = 0;
+                }
+            }
+        }
     }
-  }
 }
 
-/** INMP441 task */
-void readINMP441_task(void *pvParameter){
-  ESP_LOGI(TAG1, "Bat dau doc data tu INMP441...");
-  size_t bytes_read = 0;
-
-  while(true){
-    vTaskDelay(1); //Neu de delay la pdMS_TO_TICKS(1) thi sau n mau se bi watchdog trigger (cpu nghi bi treo he thong)
-    esp_err_t ret = i2s_channel_read(rx_channel, &buffer32, sizeof(buffer32), &bytes_read, portMAX_DELAY);
-    if(ret == ESP_ERR_TIMEOUT){
-      ESP_LOGE(TAG2, "Timeout error, bo qua frame loi... %s", esp_err_to_name(ret));
-      continue;
-    }else if(ret != ESP_OK){
-      ESP_LOGE(TAG2, "Loi khong xac dinh... %s", esp_err_to_name(ret));
-      break;
+// --- TASK DOC MAX30102 ---
+void max30102_reader_task(void *pvParameter){
+    while(1){
+        // Check sensor data available
+        max30102_check(&record, &dev);
+        
+        // Doc het FIFO
+        if(xSemaphoreTake(data_mutex, 10) == pdTRUE){
+            while (max30102_available(&record)){
+                global_ppg_red = max30102_getFIFORed(&record);
+                global_ppg_ir = max30102_getFIFOIR(&record);
+                max30102_nextSample(&record);
+            }
+            xSemaphoreGive(data_mutex);
+        }
+        vTaskDelay(pdMS_TO_TICKS(5)); 
     }
-
-    int samplesRead = bytes_read / sizeof(int32_t); //So mau doc tren 1 kenh la du lieu 32-bit
-    for(size_t i = 0; i < samplesRead; i++){
-      buffer16[i] = (int16_t)(buffer32[i] >> 8); 
-      global_inmp441_data = buffer16[i];
-      // printf("\n%ld", buffer17[i]);
-    }
-  }
 }
 
-/** AD8232 task */
-void readAD8232_task(void *pvParameter){
-  ESP_LOGI(TAG3, "Bat dau doc cam bien AD8232");
+// --- TASK TRUNG TAM (SYNC 1000Hz) ---
+void processing_task(void *pvParameter){
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1ms
+    
+    // Yeu cau: CONFIG_FREERTOS_HZ = 1000 trong menuconfig
+    
+    int16_t pcg_val = 0;
+    int ecg_val = 0;
+    uint32_t ppg_red_snap = 0, ppg_ir_snap = 0;
 
-  while(true){
-    vTaskDelay(1);
-    global_adc_value = (adc1_get_raw(ADC_CHANNEL));
-    vTaskDelay(pdMS_TO_TICKS(1000 / ADC_SAMPLE_RATE)); //5ms - Tan so lay mau cua ADC duoc the hien qua ham nay
-  }
-}
+    xLastWakeTime = xTaskGetTickCount();
 
-/** print mutex task */
-void printData_task(void *pvParameter){
-  while(1){
-    //Lay mutex truoc khi in
-    if(xSemaphoreTake(print_mutex, portTICK_PERIOD_MS) == pdTRUE){
-      printf("%d,%lu,%lu,%d\n", global_inmp441_data, global_red, global_ir, global_adc_value);
-      xSemaphoreGive(print_mutex);
+    while(1){
+        // 1. PCG
+        if(xQueueReceive(i2s_data_queue, &pcg_val, 0) != pdTRUE){
+            // Queue empty handling if needed
+        }
+
+        // 2. ECG
+        ecg_val = adc1_get_raw(ADC_ECG_CHANNEL);
+
+        // 3. PPG Snapshot
+        if(xSemaphoreTake(data_mutex, 0) == pdTRUE){
+            ppg_red_snap = global_ppg_red;
+            ppg_ir_snap = global_ppg_ir;
+            xSemaphoreGive(data_mutex);
+        }
+
+        // 4. Print CSV: PCG, RED, IR, ECG
+        printf("%d,%lu,%lu,%d\n", pcg_val, ppg_red_snap, ppg_ir_snap, ecg_val);
+
+        // 5. Sync Delay
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
 }
