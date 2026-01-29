@@ -1,49 +1,46 @@
 #include "sensor_init.h"
-#include "esp_log.h"
-#include "driver/i2c.h"
 
-// --- BIEN TOAN CUC ---
-volatile uint32_t global_ppg_red = 0;
-volatile uint32_t global_ppg_ir = 0;
+static const char *TAG = "SENSOR_FUSION";
 
 // --- HANDLES ---
 i2s_chan_handle_t rx_channel = NULL;
 i2c_dev_t dev;
 struct max30102_record record;
-QueueHandle_t i2s_data_queue = NULL;
-SemaphoreHandle_t data_mutex = NULL;
 
-static const char *TAG = "SENSOR_FUSION";
+// --- QUEUES ---
+QueueHandle_t i2s_data_queue = NULL;
+QueueHandle_t ppg_data_queue = NULL; // Thay the cho Global Variable + Mutex
+QueueHandle_t logging_queue = NULL;  // Queue chuyen data sang task in
 
 // --- KHOI TAO ---
 void sensor_init_all(void){
-    // 1. Khoi tao Queue & Mutex
+    // 1. Khoi tao Queues
     i2s_data_queue = xQueueCreate(I2S_QUEUE_LEN, sizeof(int16_t));
-    data_mutex = xSemaphoreCreateMutex();
+    ppg_data_queue = xQueueCreate(PPG_QUEUE_LEN, sizeof(ppg_sample_t));
+    logging_queue  = xQueueCreate(100, sizeof(sensor_packet_t)); // Buffer lon de tranh rot goi khi in cham
 
-    // 3. Khoi tao MAX30102
+    if(i2s_data_queue == NULL || ppg_data_queue == NULL || logging_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create Queues");
+        return;
+    }
+
+    // 2. Khoi tao I2C & MAX30102
     memset(&dev, 0, sizeof(i2c_dev_t));
     dev.port = I2C_PORT; 
-    
-    // --- [QUAN TRONG] Lay dia chi tu file header max30102.h ---
     dev.addr = MAX30102_SENSOR_ADDR; 
-    // ----------------------------------------------------------
-    
     dev.cfg.sda_io_num = I2C_SDA_GPIO;
     dev.cfg.scl_io_num = I2C_SCL_GPIO;
     dev.cfg.master.clk_speed = I2C_SPEED_HZ;
     
-    // Init config MAX30102
     ESP_ERROR_CHECK(i2c_dev_create_mutex(&dev));
-    // Cac tham so (0x1F, 4, 2...) khop voi cac type (uint8_t, int) trong prototype ham init
+    // Sample Rate: 1000Hz, Pulse Width: 411us, ADC Range: 16384nA
     ESP_ERROR_CHECK(max30102_init(0x1F, 4, 2, 1000, 411, 16384, &record, &dev));
 
-    // 4. Khoi tao ADC (Legacy)
+    // 3. Khoi tao ADC (Legacy driver for simplicity - consider upgrading to adc_oneshot later)
     adc1_config_width(ADC_WIDTH_BIT_12);
-    // Sua DB_11 thanh DB_12 cho ESP-IDF v5.x
     adc1_config_channel_atten(ADC_ECG_CHANNEL, ADC_ATTEN_DB_12);
 
-    // 5. Khoi tao I2S STD
+    // 4. Khoi tao I2S STD
     i2s_chan_config_t i2s_conf = I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT, I2S_ROLE_MASTER);
     i2s_conf.dma_desc_num = DMA_DESC_NUM;
     i2s_conf.dma_frame_num = DMA_FRAME_NUM;
@@ -65,41 +62,29 @@ void sensor_init_all(void){
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_channel, &std_conf));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_channel));
 
-    ESP_LOGI(TAG, "All Sensors Initialized");
+    ESP_LOGI(TAG, "All Sensors Initialized Successfully");
 }
 
-// --- TASK DOC I2S ---
+// --- TASK 1: DOC I2S (GIU NGUYEN) ---
 void i2s_reader_task(void *pvParameter){
     int32_t raw_buffer[DMA_FRAME_NUM];
     size_t bytes_read = 0;
-    
-    // Bien dung de tinh trung binh
     int32_t sum_sample = 0;
     int sample_count = 0;
     int16_t final_sample = 0;
 
     while(1){
-        // Doc khoi du lieu (Block cho den khi co data)
         if(i2s_channel_read(rx_channel, raw_buffer, sizeof(raw_buffer), &bytes_read, 1000 / portTICK_PERIOD_MS) == ESP_OK){
             int samples = bytes_read / sizeof(int32_t);
-            
             for(int i=0; i<samples; i++){
-                // 1. Lay gia tri 16-bit tu du lieu tho 32-bit
                 int16_t current_sample = (int16_t)(raw_buffer[i] >> 14);
-                
-                // 2. Cong don
                 sum_sample += current_sample;
                 sample_count++;
 
-                // 3. Khi du 16 mau (tuong duong 1ms troi qua o toc do 16kHz)
                 if(sample_count >= I2S_DOWNSAMPLE_RATIO){
-                    // Tinh trung binh
                     final_sample = (int16_t)(sum_sample / I2S_DOWNSAMPLE_RATIO);
-                    
-                    // Day vao Queue (Luc nay Queue nhan duoc dung 1000Hz)
-                    xQueueSend(i2s_data_queue, &final_sample, 0);
-
-                    // Reset bien dem
+                    // Timeout = 0 de tranh block neu processing task qua cham
+                    xQueueSend(i2s_data_queue, &final_sample, 0); 
                     sum_sample = 0;
                     sample_count = 0;
                 }
@@ -108,58 +93,83 @@ void i2s_reader_task(void *pvParameter){
     }
 }
 
-// --- TASK DOC MAX30102 ---
+// --- TASK 2: DOC MAX30102 (SUA DOI LON) ---
+// Su dung Queue thay vi Bien toan cuc de tranh mat mau
 void max30102_reader_task(void *pvParameter){
+    ppg_sample_t ppg_sample;
+    
     while(1){
-        // Check sensor data available
+        // 1. Check data tren sensor
         max30102_check(&record, &dev);
         
-        // Doc het FIFO
-        if(xSemaphoreTake(data_mutex, 10) == pdTRUE){
-            while (max30102_available(&record)){
-                global_ppg_red = max30102_getFIFORed(&record);
-                global_ppg_ir = max30102_getFIFOIR(&record);
-                max30102_nextSample(&record);
-            }
-            xSemaphoreGive(data_mutex);
+        // 2. Doc het FIFO hien co
+        while (max30102_available(&record)){
+            ppg_sample.red = max30102_getFIFORed(&record);
+            ppg_sample.ir = max30102_getFIFOIR(&record);
+            max30102_nextSample(&record);
+
+            // 3. Day vao Queue (Cho 10 ticks neu full)
+            xQueueSend(ppg_data_queue, &ppg_sample, 10);
         }
+        
+        // Ngu 5ms de nhuong CPU, sensor co FIFO nen khong mat du lieu
         vTaskDelay(pdMS_TO_TICKS(5)); 
     }
 }
 
-// --- TASK TRUNG TAM (SYNC 1000Hz) ---
-void processing_task(void *pvParameter){
-    TickType_t xLastWakeTime;
-    const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1ms
-    
-    // Yeu cau: CONFIG_FREERTOS_HZ = 1000 trong menuconfig
-    
-    int16_t pcg_val = 0;
-    int ecg_val = 0;
-    uint32_t ppg_red_snap = 0, ppg_ir_snap = 0;
-
-    xLastWakeTime = xTaskGetTickCount();
+// --- TASK 3: LOGGING (TASK MOI) ---
+// Chuyen viec in an sang task nay de khong lam cham task xu ly
+void logger_task(void *pvParameter){
+    sensor_packet_t data;
+    char print_buf[64]; // Buffer chuoi in
 
     while(1){
-        // 1. PCG
-        if(xQueueReceive(i2s_data_queue, &pcg_val, 0) != pdTRUE){
-            // Queue empty handling if needed
+        // Cho vo han den khi co du lieu trong Queue
+        if(xQueueReceive(logging_queue, &data, portMAX_DELAY) == pdTRUE){
+            // Format: Timestamp, PCG, Red, IR, ECG
+            // Timestamp giup debug xem mau co deu 1ms khong
+            // printf tu dong la blocking I/O, nhung o day no khong anh huong dong bo
+            printf("%lld,%d,%lu,%lu,%d\n", data.timestamp, data.pcg, data.red, data.ir, data.ecg);
+        }
+    }
+}
+
+// --- TASK 4: XU LY TRUNG TAM (SYNC HUB 1000Hz) ---
+void processing_task(void *pvParameter){
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(1); // Chu ky 1ms
+    
+    sensor_packet_t packet;
+    ppg_sample_t last_ppg = {0, 0}; // Luu gia tri cu de dien vao neu thieu
+    ppg_sample_t new_ppg;
+    
+    while(1){
+        // 1. Sync time (High Precision)
+        packet.timestamp = esp_timer_get_time(); // Lay thoi gian he thong (us)
+
+        // 2. PCG (Non-blocking)
+        if(xQueueReceive(i2s_data_queue, &packet.pcg, 0) != pdTRUE){
+            packet.pcg = 0; // Hoac giu gia tri cu
         }
 
-        // 2. ECG
-        ecg_val = adc1_get_raw(ADC_ECG_CHANNEL);
-
-        // 3. PPG Snapshot
-        if(xSemaphoreTake(data_mutex, 0) == pdTRUE){
-            ppg_red_snap = global_ppg_red;
-            ppg_ir_snap = global_ppg_ir;
-            xSemaphoreGive(data_mutex);
+        // 3. PPG (Non-blocking)
+        // Vi MAX30102 co the cham hon hoac nhanh hon doi chut
+        if(xQueueReceive(ppg_data_queue, &new_ppg, 0) == pdTRUE){
+            last_ppg = new_ppg; // Cap nhat mau moi
         }
+        // Luon su dung gia tri last_ppg (Zero-Order Hold)
+        packet.red = last_ppg.red;
+        packet.ir = last_ppg.ir;
 
-        // 4. Print CSV: PCG, RED, IR, ECG
-        printf("%d,%lu,%lu,%d\n", pcg_val, ppg_red_snap, ppg_ir_snap, ecg_val);
+        // 4. ECG (ADC Read)
+        packet.ecg = adc1_get_raw(ADC_ECG_CHANNEL);
 
-        // 5. Sync Delay
+        // 5. Day goi tin sang Logger Task (Timeout = 0)
+        // Neu Logger in qua cham va Queue day, goi tin nay se bi DROP de
+        // bao ve tính thoi gian thuc cua he thong.
+        xQueueSend(logging_queue, &packet, 0);
+
+        // 6. Ngu chinh xac den next tick
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
