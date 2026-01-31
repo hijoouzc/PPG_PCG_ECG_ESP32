@@ -16,22 +16,21 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_timer.h" // Thu vien thoi gian
+#include "esp_timer.h" 
 
 /**** Driver Libraries ****/
 #include "driver/i2s_std.h"
-#include "driver/i2c_master.h" // Update for v5.x if needed, keeping legacy for compatibility
-#include "driver/i2c.h"
+#include "driver/i2c_master.h" 
 #include "driver/gpio.h"
 #include "driver/adc.h"
 #include "max30102.h"
 
-// --- CAU HINH HE THONG ---
+// Configure system 
 #define SAMPLE_RATE_HZ      1000  
 #define PRINT_TASK_PRIORITY 3     // Priority thap hon Processing Task
 #define PROCESS_TASK_PRIORITY 5   // Priority cao nhat (Real-time)
 
-// --- I2S (PCG - INMP441) ---
+// I2S (PCG - INMP441)
 #define I2S_PORT            I2S_NUM_0
 #define DIN_PIN             33
 #define BCLK_PIN            32
@@ -40,20 +39,25 @@
 #define I2S_DOWNSAMPLE_RATIO 16 
 #define DMA_DESC_NUM        6
 #define DMA_FRAME_NUM       64    
-#define I2S_QUEUE_LEN       256   
+#define I2S_QUEUE_LEN       (DMA_DESC_NUM*DMA_FRAME_NUM) // Queue cho PCG khi I2S doc nhanh
 
-// --- I2C (PPG - MAX30102) ---
+// I2C (PPG - MAX30102)
 #define I2C_SDA_GPIO        21
 #define I2C_SCL_GPIO        22
 #define I2C_PORT            I2C_NUM_0
 #define I2C_SPEED_HZ        400000 
-#define PPG_QUEUE_LEN       50    // Buffer cho PPG khi cam bien doc nhanh
+#define PPG_QUEUE_LEN       50    // Queue cho PPG khi cam bien doc nhanh
+#define POWER_LED            UINT8_C(0x1F) // 6.4mA
+#define SAMPLE_AVERAGE       4
+#define LED_MODE             2
+#define PULSE_WIDTH          411 // 18 bit resolution
+#define ADC_RANGE            16384
 
-// --- ADC (ECG - AD8232) ---
-#define ADC_ECG_CHANNEL     ADC1_CHANNEL_6 // GPIO34
+// ADC (ECG - AD8232)
+#define ADC_CHANNEL         ADC1_CHANNEL_6 // GPIO34
 #define ADC_ATTEN_LEVEL     ADC_ATTEN_DB_12 
 
-// --- DATA STRUCTURES ---
+// DATA STRUCTURES
 // 1. Struct chua mau PPG Red/IR
 typedef struct {
     uint32_t red;
@@ -69,12 +73,12 @@ typedef struct {
     int ecg;
 } sensor_packet_t;
 
-// --- GLOBAL HANDLES ---
+// GLOBAL HANDLES
 extern QueueHandle_t i2s_data_queue; // Queue PCG
-extern QueueHandle_t ppg_data_queue; // Queue PPG (Moi)
-extern QueueHandle_t logging_queue;  // Queue de in ra UART (Moi)
+extern QueueHandle_t ppg_data_queue; // Queue PPG
+extern QueueHandle_t logging_queue;  // Queue de in ra UART
 
-// --- FUNCTION PROTOTYPES ---
+// FUNCTION PROTOTYPES
 void sensor_init_all(void);
 
 // Tasks

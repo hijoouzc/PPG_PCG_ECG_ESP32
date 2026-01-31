@@ -1,20 +1,21 @@
 #include "sensor_init.h"
 
+
 static const char *TAG = "SENSOR_FUSION";
 
-// --- HANDLES ---
+// HANDLES
 i2s_chan_handle_t rx_channel = NULL;
 i2c_dev_t dev;
 struct max30102_record record;
 
-// --- QUEUES ---
+// QUEUES
 QueueHandle_t i2s_data_queue = NULL;
 QueueHandle_t ppg_data_queue = NULL; // Thay the cho Global Variable + Mutex
 QueueHandle_t logging_queue = NULL;  // Queue chuyen data sang task in
 
-// --- KHOI TAO ---
+// CONFIG
 void sensor_init_all(void){
-    // 1. Khoi tao Queues
+    // 1. Config Queues
     i2s_data_queue = xQueueCreate(I2S_QUEUE_LEN, sizeof(int16_t));
     ppg_data_queue = xQueueCreate(PPG_QUEUE_LEN, sizeof(ppg_sample_t));
     logging_queue  = xQueueCreate(100, sizeof(sensor_packet_t)); // Buffer lon de tranh rot goi khi in cham
@@ -24,23 +25,26 @@ void sensor_init_all(void){
         return;
     }
 
-    // 2. Khoi tao I2C & MAX30102
+    // 2. Config I2C (PPG - MAX30102)
     memset(&dev, 0, sizeof(i2c_dev_t));
-    dev.port = I2C_PORT; 
-    dev.addr = MAX30102_SENSOR_ADDR; 
-    dev.cfg.sda_io_num = I2C_SDA_GPIO;
-    dev.cfg.scl_io_num = I2C_SCL_GPIO;
-    dev.cfg.master.clk_speed = I2C_SPEED_HZ;
+
+    ESP_ERROR_CHECK(max30102_initDesc(&dev, I2C_PORT, I2C_SDA_GPIO, I2C_SCL_GPIO));
+    if(max30102_readPartID(&dev) == ESP_OK) {
+        ESP_LOGI("MAX30102", "Found MAX30102!");
+    }
+    else {
+        ESP_LOGE("MAX30102", "Not found MAX30102");
+    }
+    max30102_clearFIFO(&dev); // Xoa du lieu rac trong FIFO
     
-    ESP_ERROR_CHECK(i2c_dev_create_mutex(&dev));
     // Sample Rate: 1000Hz, Pulse Width: 411us, ADC Range: 16384nA
-    ESP_ERROR_CHECK(max30102_init(0x1F, 4, 2, 1000, 411, 16384, &record, &dev));
+    ESP_ERROR_CHECK(max30102_init(POWER_LED, SAMPLE_AVERAGE, LED_MODE, SAMPLE_RATE_HZ, PULSE_WIDTH, ADC_RANGE, &record, &dev));
 
-    // 3. Khoi tao ADC (Legacy driver for simplicity - consider upgrading to adc_oneshot later)
+    // 3. Config ADC (ECG - AD8232)
     adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC_ECG_CHANNEL, ADC_ATTEN_DB_12);
+    adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_DB_12);
 
-    // 4. Khoi tao I2S STD
+    // 4. Config I2S (PCG - INMP441)
     i2s_chan_config_t i2s_conf = I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT, I2S_ROLE_MASTER);
     i2s_conf.dma_desc_num = DMA_DESC_NUM;
     i2s_conf.dma_frame_num = DMA_FRAME_NUM;
@@ -48,7 +52,11 @@ void sensor_init_all(void){
     ESP_ERROR_CHECK(i2s_new_channel(&i2s_conf, NULL, &rx_channel));
 
     i2s_std_config_t std_conf = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_SAMPLE_RATE),
+        .clk_cfg = {
+            .sample_rate_hz = I2S_SAMPLE_RATE,
+            .clk_src = I2S_CLK_SRC_DEFAULT,
+            .mclk_multiple = I2S_MCLK_MULTIPLE_1152, //Cang cao thi jitter(nhieu) cua BLCK va LRCL cang it 
+        },
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
@@ -65,7 +73,7 @@ void sensor_init_all(void){
     ESP_LOGI(TAG, "All Sensors Initialized Successfully");
 }
 
-// --- TASK 1: DOC I2S (GIU NGUYEN) ---
+// TASK 1: read I2S 
 void i2s_reader_task(void *pvParameter){
     int32_t raw_buffer[DMA_FRAME_NUM];
     size_t bytes_read = 0;
@@ -93,7 +101,7 @@ void i2s_reader_task(void *pvParameter){
     }
 }
 
-// --- TASK 2: DOC MAX30102 (SUA DOI LON) ---
+// TASK 2: read MAX30102 (SUA DOI LON)
 // Su dung Queue thay vi Bien toan cuc de tranh mat mau
 void max30102_reader_task(void *pvParameter){
     ppg_sample_t ppg_sample;
@@ -117,7 +125,7 @@ void max30102_reader_task(void *pvParameter){
     }
 }
 
-// --- TASK 3: LOGGING (TASK MOI) ---
+// TASK 3: LOGGING 
 // Chuyen viec in an sang task nay de khong lam cham task xu ly
 void logger_task(void *pvParameter){
     sensor_packet_t data;
@@ -134,7 +142,7 @@ void logger_task(void *pvParameter){
     }
 }
 
-// --- TASK 4: XU LY TRUNG TAM (SYNC HUB 1000Hz) ---
+// TASK 4: SYNC HUB 1000Hz
 void processing_task(void *pvParameter){
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(1); // Chu ky 1ms
@@ -162,7 +170,7 @@ void processing_task(void *pvParameter){
         packet.ir = last_ppg.ir;
 
         // 4. ECG (ADC Read)
-        packet.ecg = adc1_get_raw(ADC_ECG_CHANNEL);
+        packet.ecg = adc1_get_raw(ADC_CHANNEL);
 
         // 5. Day goi tin sang Logger Task (Timeout = 0)
         // Neu Logger in qua cham va Queue day, goi tin nay se bi DROP de

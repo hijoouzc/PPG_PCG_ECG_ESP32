@@ -2,12 +2,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Đọc dữ liệu từ file CSV không có tiêu đề
-df = pd.read_csv(r"..\data\test5.csv", header=None)
-df.columns = ["ECG", "RED", "IR", "PCG"]  # Đặt tên cột tương ứng
+df = pd.read_csv(r"..\data\test6.csv", header=0)
+df.columns = ["Timestamp","ECG", "RED", "IR", "PCG"]  # Đặt tên cột tương ứng
 
 # Định nghĩa khoảng cần vẽ (bạn có thể điều chỉnh)
-start = 0
-end = 1000  # Vẽ đến cuối dữ liệu
+start = 31000
+end = 38000  
 
 # Tạo trục x
 x = range(start, end)

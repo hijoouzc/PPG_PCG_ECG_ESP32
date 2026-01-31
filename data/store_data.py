@@ -6,7 +6,7 @@ import sys
 # ===== CẤU HÌNH =====
 PORT = 'COM5'
 BAUD = 921600 
-FILENAME = "test5.csv"
+FILENAME = "test6.csv"
 
 # Target: 1000Hz => 1000 micro-seconds (us) giữa các mẫu
 TARGET_INTERVAL_US = 1000 
@@ -30,7 +30,7 @@ def run_logger():
         
         # Ghi Header cho file CSV (Khớp với printf trong C)
         # C Code: printf("%lld,%d,%lu,%lu,%d\n", timestamp, pcg, red, ir, ecg);
-        writer.writerow(["Timestamp", "PCG", "Red", "IR", "ECG"])
+        writer.writerow(["Timestamp", "PCG", "RED", "IR", "ECG"])
 
         sample_count = 0
         total_lost_samples = 0
@@ -78,7 +78,7 @@ def run_logger():
                         # Tính số mẫu bị mất (làm tròn)
                         lost = int((delta_us - TARGET_INTERVAL_US) / TARGET_INTERVAL_US)
                         total_lost_samples += lost
-                        print(f"!!! WARNING: Lost {lost} samples (Delta: {delta_us}us)")
+                        # print(f"!!! WARNING: Lost {lost} samples (Delta: {delta_us}us)")
 
                 last_esp_ts = esp_ts
 
