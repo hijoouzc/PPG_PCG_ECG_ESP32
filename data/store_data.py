@@ -6,7 +6,7 @@ import sys
 # ===== CẤU HÌNH =====
 PORT = 'COM5'
 BAUD = 921600 
-FILENAME = "test6.csv"
+FILENAME = "test15.csv"
 
 # Target: 1000Hz => 1000 micro-seconds (us) giữa các mẫu
 TARGET_INTERVAL_US = 1000 

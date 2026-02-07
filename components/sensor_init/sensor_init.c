@@ -10,7 +10,7 @@ struct max30102_record record;
 
 // QUEUES
 QueueHandle_t i2s_data_queue = NULL;
-QueueHandle_t ppg_data_queue = NULL; // Thay the cho Global Variable + Mutex
+QueueHandle_t ppg_data_queue = NULL;
 QueueHandle_t logging_queue = NULL;  // Queue chuyen data sang task in
 
 // CONFIG
@@ -37,7 +37,7 @@ void sensor_init_all(void){
     }
     max30102_clearFIFO(&dev); // Xoa du lieu rac trong FIFO
     
-    // Sample Rate: 1000Hz, Pulse Width: 411us, ADC Range: 16384nA
+    // Sample Rate: 1000Hz, Pulse Width: 215us, ADC Range: 16384nA
     ESP_ERROR_CHECK(max30102_init(POWER_LED, SAMPLE_AVERAGE, LED_MODE, SAMPLE_RATE_HZ, PULSE_WIDTH, ADC_RANGE, &record, &dev));
 
     // 3. Config ADC (ECG - AD8232)
@@ -101,7 +101,7 @@ void i2s_reader_task(void *pvParameter){
     }
 }
 
-// TASK 2: read MAX30102 (SUA DOI LON)
+// TASK 2: read MAX30102
 // Su dung Queue thay vi Bien toan cuc de tranh mat mau
 void max30102_reader_task(void *pvParameter){
     ppg_sample_t ppg_sample;
@@ -120,8 +120,8 @@ void max30102_reader_task(void *pvParameter){
             xQueueSend(ppg_data_queue, &ppg_sample, 10);
         }
         
-        // Ngu 5ms de nhuong CPU, sensor co FIFO nen khong mat du lieu
-        vTaskDelay(pdMS_TO_TICKS(5)); 
+        // Ngu 2ms de nhuong CPU, sensor co FIFO nen khong mat du lieu
+        vTaskDelay(pdMS_TO_TICKS(2)); 
     }
 }
 

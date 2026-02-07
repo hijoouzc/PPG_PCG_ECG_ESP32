@@ -46,12 +46,12 @@
 #define I2C_SCL_GPIO        22
 #define I2C_PORT            I2C_NUM_0
 #define I2C_SPEED_HZ        400000 
-#define PPG_QUEUE_LEN       50    // Queue cho PPG khi cam bien doc nhanh
-#define POWER_LED            UINT8_C(0x1F) // 6.4mA
-#define SAMPLE_AVERAGE       4
-#define LED_MODE             2
-#define PULSE_WIDTH          411 // 18 bit resolution
-#define ADC_RANGE            16384
+#define PPG_QUEUE_LEN       100    // Queue cho PPG 
+#define POWER_LED           UINT8_C(0x3F)
+#define SAMPLE_AVERAGE      1
+#define LED_MODE            2
+#define PULSE_WIDTH         215 // 16 bit resolution
+#define ADC_RANGE           16384
 
 // ADC (ECG - AD8232)
 #define ADC_CHANNEL         ADC1_CHANNEL_6 // GPIO34

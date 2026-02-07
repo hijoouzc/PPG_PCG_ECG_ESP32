@@ -42,7 +42,7 @@ void app_main(void){
     );
 
     // 4. Tao Task Xu ly Trung tam (Sync Hub)
-    // QUAN TRONG: Priority cao nhat (6) de dam bao chay dung 1ms/lan
+    // Priority cao nhat (6) de dam bao chay dung 1ms/lan
     xTaskCreatePinnedToCore(
         processing_task,
         "proc_task",
